@@ -15,7 +15,7 @@ authors:
 license: MIT
 repository-code: "https://github.com/WarderHouse/citation-verifier"
 url: "https://github.com/WarderHouse/citation-verifier"
-# doi: added after the first GitHub release is archived on Zenodo
+doi: "10.5281/zenodo.20508955"
 version: "0.1.0"
 date-released: "2026-06-02"
 keywords:

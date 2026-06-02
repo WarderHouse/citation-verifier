@@ -1,6 +1,7 @@
 # citation-verifier
 
 [![CI](https://github.com/WarderHouse/citation-verifier/actions/workflows/ci.yml/badge.svg)](https://github.com/WarderHouse/citation-verifier/actions/workflows/ci.yml)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20508955.svg)](https://doi.org/10.5281/zenodo.20508955)
 
 Catch fabricated or mis-cited references before a reviewer does. `citeverify`
 takes a list of references and checks each one against three independent public
