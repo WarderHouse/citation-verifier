@@ -7,10 +7,12 @@ takes a list of references and checks each one against three independent public
 databases (CrossRef, OpenAlex, and Semantic Scholar), then reports whether the
 work exists and whether its title, year, and authors match.
 
-Two or more databases agreeing is **verified**, one is **suspect**, and none is
-**not_found**. It is built for anyone who uses AI assistance to draft or gather
-citations and wants a deterministic check that the references are real, not a
-matter of the model's word.
+A reference is **found** when any database confirms it (a resolved DOI is enough),
+flagged **check the DOI** when the DOI resolves to a differently-titled work,
+**likely grey literature** when it has no DOI and is not in the databases (a book,
+report, or website to verify yourself), and **not found** when a DOI resolves
+nowhere. It is built for anyone who uses AI assistance to draft or gather
+citations and wants a deterministic check that the references are real.
 
 It establishes that a work **exists** and that its metadata **matches**. It does
 *not* judge whether the work supports the claim it is cited for, or whether the
@@ -23,18 +25,17 @@ For each reference, `citeverify`:
 
 - queries **CrossRef**, **OpenAlex**, and **Semantic Scholar** (by DOI when you
   supply one, otherwise by title);
-- counts a database as a match when the returned title is similar enough and the
-  year is within one year;
-- resolves the DOI at doi.org when present;
-- returns a verdict (`verified` / `suspect` / `not_found`), a heuristic
-  confidence, the databases that matched, and the author overlap.
+- treats a resolved DOI as confirmation on its own; without a DOI, counts a
+  database when the returned title matches and the year or authors line up;
+- returns a verdict (`found` / `check the DOI` / `grey literature` / `not found`)
+  with the databases that confirmed it.
 
 ## Confidentiality
 
 Unlike a fully offline tool, `citeverify` **uses the network**, because looking a
 reference up means asking the databases about it. For each reference it sends the
-**title, authors, year, and DOI** to CrossRef, OpenAlex, Semantic Scholar, and
-doi.org. It sends **no full text**, contacts **no AI or LLM service**, and emits
+**title, authors, year, and DOI** to CrossRef, OpenAlex, and Semantic Scholar.
+It sends **no full text**, contacts **no AI or LLM service**, and emits
 **no telemetry**. Reference metadata is already-published bibliographic data, but
 if even that is sensitive for your work, do not run this tool. See
 [CONFIDENTIALITY.md](CONFIDENTIALITY.md).
@@ -51,7 +52,7 @@ Python 3.10 or newer. The only runtime dependency is `requests`.
 
 ## Quickstart
 
-Run the live self-test (two real references and one fabricated one):
+Run the live self-test (two real references, one report, and one fabricated DOI):
 
 ```bash
 uv run citeverify --self-test
@@ -60,13 +61,14 @@ uv run citeverify --self-test
 ```
 # Citation Existence Verification
 
-| # | Reference | Verdict | Conf | Sources | DOI |
-|---|-----------|---------|------|---------|-----|
-| 1 | Construct validity in psychological tests (1955) | verified | 0.93 | cr, op | yes |
-| 2 | A mathematical theory of communication (1948) | verified | 0.93 | cr, op | yes |
-| 3 | An entirely fabricated paper that does not exist ... (2023) | not_found | 0.0 | none | no |
+| # | Reference | Verdict | Sources |
+|---|-----------|---------|---------|
+| 1 | Construct validity in psychological tests (1955) | found | cr, op |
+| 2 | A mathematical theory of communication (1948) | found | cr, op |
+| 3 | The future of jobs report 2025 (2025) | grey lit | - |
+| 4 | An entirely fabricated paper that does not exist ... (2023) | NOT FOUND | - |
 
-**1 of 3 flagged for review (suspect or not_found).**
+**2 of 4 need review (check the DOI, grey literature, or not found).**
 ```
 
 Check your own references by putting them in a JSON file (see
@@ -85,30 +87,30 @@ uv run citeverify --refs refs.json --out citation_report.md
 
 Set `CITEVERIFY_MAILTO` to your email to join CrossRef's faster "polite pool".
 
-## How the verdict and confidence work
+## How the verdict works
 
-The **verdict** is driven only by cross-source agreement, because independent
-databases agreeing is the strong signal: `verified` needs two or more, `suspect`
-is one, `not_found` is none. The **confidence** is a heuristic in [0, 1] that
-adds small amounts for a resolving DOI and for author overlap; it is a ranking
-aid, not a calibrated probability, and it never overrides the verdict.
+- **found**: a resolved DOI, or a title match (year- or author-backed) in any one
+  database. One confirming database is enough, since CrossRef and OpenAlex overlap
+  heavily and requiring both produced constant false alarms.
+- **check the DOI**: the DOI resolves, but to a work whose title differs from the
+  one you cited. Often a transposed or wrong DOI.
+- **grey literature**: no DOI and no scholarly match. Likely a book, report, or
+  website these databases do not index; verify it yourself.
+- **not found**: a DOI was given but no database has it. May be wrong or fabricated.
 
 ## Scope: what this does and does not establish
 
-- **Existence and metadata, not correctness of use.** A `verified` result means
-  the work is real and its title, year, and authors line up. It says nothing
-  about whether the source actually supports the sentence that cites it. That
-  read remains yours.
-- **A flag, not a verdict on fabrication.** `not_found` usually means a
-  fabricated or badly mis-typed reference, but a genuine work that is obscure or
-  poorly indexed can also fail. Treat `suspect` and `not_found` as prompts to
-  check by hand, not as proof.
+- **Existence, not correctness of use.** A `found` result means the work is real;
+  it says nothing about whether the source supports the sentence that cites it.
+  That read remains yours.
+- **A flag, not proof.** `not found` usually means a fabricated or mistyped DOI,
+  but treat every non-`found` verdict as a prompt to check by hand, not as proof.
+- **Grey literature is not judged.** Books, reports, and websites are not in these
+  scholarly databases, so they are flagged for you to verify, never called fake.
 - **A point-in-time check.** Databases add and correct records over time, so the
   same reference can change verdict later.
-- **Semantic Scholar's keyless API is rate-limited** and often will not answer,
-  so in practice the verdict usually rests on CrossRef and OpenAlex. A real work
-  indexed in only one of them can show as `suspect`: that is the tool being
-  cautious, not wrong.
+- **Semantic Scholar's keyless API is rate-limited** and often will not answer, so
+  in practice the verdict usually rests on CrossRef and OpenAlex.
 
 ## Tests
 

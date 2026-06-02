@@ -1,14 +1,12 @@
 """Network lookups against public, keyless citation databases.
 
-Each function queries one database (CrossRef, OpenAlex, Semantic Scholar) and
-returns a normalized record ``{title, year, authors, doi}``, or ``None`` if the
-work is not found or the request fails. Failures are swallowed and reported as
-``None`` so one database being unavailable degrades the result rather than
-crashing the run.
-
-For a title search the database may return several candidates; we keep the one
-whose title is closest to the reference's, rather than blindly trusting the first
-hit (a short, common-phrase title can otherwise miss the real paper).
+Each function queries one database (CrossRef, OpenAlex, Semantic Scholar). When
+the reference has a DOI it does an exact DOI lookup and returns that record, or
+``None`` if the database does not have that DOI (no silent fall-back to a title
+search, so "found by DOI" is a clean signal). Without a DOI it does a title
+search and returns the closest-titled candidate. Failures are swallowed and
+reported as ``None`` so one database being unavailable degrades the result
+rather than crashing the run.
 
 These functions send the reference's title, authors, year, and DOI to the public
 APIs in order to look the work up. They send no full text and contact no AI
@@ -28,7 +26,6 @@ from citeverify.scoring import title_similarity
 CROSSREF = "https://api.crossref.org/works"
 OPENALEX = "https://api.openalex.org/works"
 S2 = "https://api.semanticscholar.org/graph/v1/paper"
-DOI_RESOLVER = "https://doi.org"
 TIMEOUT = 30
 
 #: Optional contact for CrossRef's polite pool; set CITEVERIFY_MAILTO to use it.
@@ -69,7 +66,7 @@ def _best_match(ref: dict, candidates: list[dict]) -> dict | None:
 
 
 def crossref(ref: dict) -> dict | None:
-    """Look a reference up in CrossRef."""
+    """Look a reference up in CrossRef (by DOI if present, else by title)."""
     s = session()
     try:
         if ref.get("doi"):
@@ -78,8 +75,7 @@ def crossref(ref: dict) -> dict | None:
                 headers=HEADERS,
                 timeout=TIMEOUT,
             )
-            if r.status_code == 200:
-                return _cr_item(r.json()["message"])
+            return _cr_item(r.json()["message"]) if r.status_code == 200 else None
         params = {"query.bibliographic": ref.get("title", ""), "rows": 5}
         if MAILTO:
             params["mailto"] = MAILTO
@@ -105,7 +101,7 @@ def _cr_item(it: dict) -> dict:
 
 
 def openalex(ref: dict) -> dict | None:
-    """Look a reference up in OpenAlex."""
+    """Look a reference up in OpenAlex (by DOI if present, else by title)."""
     s = session()
     try:
         if ref.get("doi"):
@@ -117,8 +113,8 @@ def openalex(ref: dict) -> dict | None:
             )
             if r.status_code == 200:
                 res = r.json().get("results", [])
-                if res:
-                    return _oa_item(res[0])
+                return _oa_item(res[0]) if res else None
+            return None
         params = {"filter": f"title.search:{ref.get('title', '')}", "per_page": 5}
         if MAILTO:
             params["mailto"] = MAILTO
@@ -139,7 +135,7 @@ def _oa_item(w: dict) -> dict:
 
 
 def semantic_scholar(ref: dict) -> dict | None:
-    """Look a reference up in Semantic Scholar."""
+    """Look a reference up in Semantic Scholar (by DOI if present, else by title)."""
     s = session()
     fields = "title,year,authors,externalIds"
     try:
@@ -150,8 +146,7 @@ def semantic_scholar(ref: dict) -> dict | None:
                 timeout=TIMEOUT,
                 params={"fields": fields},
             )
-            if r.status_code == 200:
-                return _s2_item(r.json())
+            return _s2_item(r.json()) if r.status_code == 200 else None
         r = s.get(
             f"{S2}/search",
             headers=HEADERS,
@@ -170,21 +165,6 @@ def _s2_item(p: dict) -> dict:
     authors = [a.get("name", "") for a in p.get("authors", [])]
     doi = (p.get("externalIds") or {}).get("DOI")
     return _record(p.get("title"), p.get("year"), authors, doi)
-
-
-def doi_resolves(doi: str) -> bool:
-    """True if the DOI resolves (HTTP < 400) at doi.org."""
-    s = session()
-    try:
-        r = s.head(
-            f"{DOI_RESOLVER}/{doi}",
-            headers=HEADERS,
-            timeout=20,
-            allow_redirects=True,
-        )
-        return r.status_code < 400
-    except requests.RequestException:
-        return False
 
 
 #: The default databases queried, in order.

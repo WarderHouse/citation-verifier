@@ -1,7 +1,6 @@
 from citeverify.scoring import (
     author_overlap,
     normalize_title,
-    score_reference,
     title_similarity,
     years_match,
 )
@@ -31,20 +30,3 @@ def test_years_match():
     assert years_match(2020, 2021)  # within tolerance
     assert not years_match(2020, 2025)
     assert years_match(None, 2020)  # a missing year is permissive
-
-
-def test_score_reference_verdicts():
-    assert score_reference([True, True, True])[1] == "verified"
-    assert score_reference([True, False, False])[1] == "suspect"
-    assert score_reference([False, False, False])[1] == "not_found"
-
-
-def test_score_reference_confidence_monotonic_and_capped():
-    c0 = score_reference([False, False, False])[0]
-    c1 = score_reference([True, False, False])[0]
-    c2 = score_reference([True, True, False])[0]
-    assert c0 < c1 < c2
-    maxed = score_reference(
-        [True, True, True], doi_resolves=True, author_overlap_best=1.0
-    )
-    assert maxed[0] <= 1.0

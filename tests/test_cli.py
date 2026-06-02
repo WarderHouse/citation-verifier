@@ -33,12 +33,11 @@ def test_cli_writes_report_offline(tmp_path, monkeypatch):
             {
                 "title": "x",
                 "year": 2020,
+                "verdict": "grey_literature",
                 "sources_found": [],
+                "matched_title": None,
                 "title_sims": {},
-                "doi_resolves": False,
-                "author_overlap": 0.0,
                 "confidence": 0.0,
-                "verdict": "not_found",
             }
         ],
     )

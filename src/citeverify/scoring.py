@@ -1,8 +1,8 @@
-"""Pure, offline scoring functions for citation matching.
+"""Pure, offline helpers for citation matching. No network, fully deterministic.
 
-No network and fully deterministic, so these are unit-tested directly. They
-decide whether a candidate record from a database matches a reference (by title
-and year), and turn the per-source hits into a confidence score and a verdict.
+These decide whether a candidate record from a database matches a reference
+(title similarity, author overlap, year proximity). The verdict logic that uses
+them lives in verify.py.
 """
 
 from __future__ import annotations
@@ -10,13 +10,17 @@ from __future__ import annotations
 import re
 from difflib import SequenceMatcher
 
-#: A title similarity at or above this counts as a title match.
+#: A title similarity at or above this counts as a title match (no-DOI lookups).
 TITLE_MATCH_THRESHOLD = 0.85
 #: A candidate year within this many years of the reference counts as a match.
 YEAR_TOLERANCE = 1
 #: Author overlap at or above this can stand in for a year match, because
 #: databases sometimes record a wrong year for an otherwise clear match.
 AUTHOR_MATCH_THRESHOLD = 0.5
+#: When a DOI resolves but the returned title is less similar than this to the
+#: cited title, treat it as resolving to a differently-titled work (a possible
+#: wrong DOI) rather than a clean confirmation.
+DOI_TITLE_MISMATCH = 0.5
 
 _NONALNUM = re.compile(r"[^a-z0-9 ]+")
 
@@ -67,23 +71,3 @@ def years_match(ref_year, cand_year, tolerance: int = YEAR_TOLERANCE) -> bool:
         return abs(int(ref_year) - int(cand_year)) <= tolerance
     except (TypeError, ValueError):
         return False
-
-
-def score_reference(hits, doi_resolves: bool = False, author_overlap_best: float = 0.0):
-    """Turn per-source title+year hits into a ``(confidence, verdict)`` pair.
-
-    ``hits`` is an iterable of booleans, one per database queried. The verdict is
-    driven by cross-source agreement: two or more independent databases agreeing
-    is ``verified``; one is ``suspect``; none is ``not_found``. DOI resolution and
-    author overlap nudge the confidence but never change the verdict. Confidence
-    is a heuristic in [0, 1], not a calibrated probability.
-    """
-    n = sum(1 for h in hits if h)
-    confidence = min(
-        1.0,
-        0.34 * n
-        + 0.15 * (1 if doi_resolves else 0)
-        + 0.10 * float(author_overlap_best),
-    )
-    verdict = "verified" if n >= 2 else ("suspect" if n == 1 else "not_found")
-    return round(confidence, 3), verdict

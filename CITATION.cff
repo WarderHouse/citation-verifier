@@ -2,11 +2,11 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 title: citation-verifier
 abstract: >-
-  A deterministic, multi-database checker that confirms whether references exist
-  and whether their title, year, and authors match, by cross-checking CrossRef,
-  OpenAlex, and Semantic Scholar. It flags suspect and not-found references for
-  human review. It establishes existence and metadata agreement, not whether a
-  source supports the claim it is cited for.
+  A deterministic, multi-database checker that confirms whether references exist,
+  by cross-checking CrossRef, OpenAlex, and Semantic Scholar. A resolved DOI or a
+  title match confirms a reference; references with no scholarly match are flagged
+  as likely grey literature, and unresolved DOIs as not found. It establishes
+  existence, not whether a source supports the claim it is cited for.
 type: software
 authors:
   - family-names: Crocco

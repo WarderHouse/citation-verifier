@@ -1,15 +1,17 @@
 # citation-verifier — project guide
 
-`citeverify` checks whether references exist and whether their metadata matches,
-by cross-checking CrossRef, OpenAlex, and Semantic Scholar. Two or more agreeing
-is `verified`, one is `suspect`, none is `not_found`.
+`citeverify` checks whether references exist, by cross-checking CrossRef,
+OpenAlex, and Semantic Scholar. A resolved DOI or a title match in any one
+database is `found`; a DOI resolving to a differently-titled work is `mismatch`;
+no DOI and no match is `grey_literature` (verify by hand); a DOI no database has
+is `not_found`.
 
 ## What this does and does NOT establish (read first)
 
 It establishes **existence and metadata agreement**. It does not:
 
 - judge whether a source supports the claim it is cited for (that read is the user's);
-- prove fabrication (a real but poorly indexed work can also come back `not_found`);
+- prove fabrication (an obscure work, or grey literature, can also miss);
 - stay constant over time (databases add and fix records).
 
 Keep README, docstrings, and report wording consistent with this. Do not add
@@ -19,9 +21,9 @@ Keep README, docstrings, and report wording consistent with this. Do not add
 
 | Module | Role |
 |---|---|
-| `scoring.py` | pure, offline matching: title normalization/similarity, author overlap, year match, verdict + confidence. Fully unit-tested. |
-| `lookup.py` | network calls to the three databases + doi.org; each returns a normalized record or `None`, failing soft. |
-| `verify.py` | orchestration (`verify_reference`) with injectable `lookups`/`doi_check`/`pause` for offline tests, plus `format_report`. |
+| `scoring.py` | pure, offline matching helpers: title normalization/similarity, author overlap, year match. Fully unit-tested. |
+| `lookup.py` | network calls to the three databases; a DOI lookup returns the record or `None` (no title fall-back), a title search returns the closest candidate. |
+| `verify.py` | orchestration (`verify_reference`) + the verdict logic + `format_report`. Injectable `lookups`/`pause` for offline tests. |
 | `cli.py` | the `citeverify` command (`--refs`, `--out`, `--self-test`). |
 
 ## Conventions & constraints
@@ -33,8 +35,9 @@ Keep README, docstrings, and report wording consistent with this. Do not add
 - **Determinism lives in `scoring.py`** and is unit-tested with no network.
   Network functions fail soft to `None` and are not exercised in CI; the live
   path is the manual `--self-test`.
-- **Honest claims:** existence and metadata match, never correctness of use; a
-  `not_found` is a flag, not proof.
+- **Honest claims:** existence, never correctness of use; one database is enough
+  for `found`; a non-`found` verdict is a flag, not proof; grey literature is
+  flagged, never called fabricated.
 - **No personal contact baked in:** the polite-pool email comes from the
   `CITEVERIFY_MAILTO` env var, never a hard-coded address.
 - **One source of truth for the version:** `__version__` in

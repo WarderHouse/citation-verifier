@@ -10,7 +10,8 @@ from pathlib import Path
 from citeverify import __version__
 from citeverify.verify import format_report, verify_references
 
-#: Three references for the live ``--self-test``: two real, one fabricated.
+#: Built-in references for the live ``--self-test``: two real (with DOIs), one
+#: grey-literature report (no DOI), and one fabricated DOI.
 _SELF_TEST_REFS = [
     {
         "title": "Construct validity in psychological tests",
@@ -23,6 +24,11 @@ _SELF_TEST_REFS = [
         "authors": ["Shannon"],
         "year": 1948,
         "doi": "10.1002/j.1538-7305.1948.tb01338.x",
+    },
+    {
+        "title": "The future of jobs report 2025",
+        "authors": ["World Economic Forum"],
+        "year": 2025,
     },
     {
         "title": "An entirely fabricated paper that does not exist anywhere",
@@ -48,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--self-test",
         action="store_true",
-        help="run a live demo on three built-in references (needs network).",
+        help="run a live demo on four built-in references (needs network).",
     )
     args = ap.parse_args(argv)
 
