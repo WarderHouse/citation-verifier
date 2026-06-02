@@ -6,11 +6,12 @@
 <title>Citation Verifier</title>
 <style>
   :root { --ink:#1c2430; --muted:#5b6671; --line:#dfe4ea; --accent:#2f5d8a; --bg:#f7f8fa;
-          --ok:#2c7a44; --okbg:#e9f5ee; --warn:#8a6d1e; --warnbg:#fbf3da; --bad:#a3322a; --badbg:#fcebe9; --err:#5b6671; --errbg:#eef0f2; }
+          --ok:#2c7a44; --okbg:#e9f5ee; --warn:#8a6d1e; --warnbg:#fbf3da; --bad:#a3322a; --badbg:#fcebe9;
+          --grey:#41597a; --greybg:#eaf0f7; --err:#5b6671; --errbg:#eef0f2; }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--ink);
     font:16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-  .wrap { max-width:840px; margin:0 auto; padding:28px 20px 64px; }
+  .wrap { max-width:860px; margin:0 auto; padding:28px 20px 64px; }
   h1 { font-size:1.5rem; margin:0 0 4px; }
   .tagline { color:var(--muted); margin:0 0 14px; }
   .privacy { background:#eef4ef; border:1px solid #cfe0d3; color:#2c5338;
@@ -32,18 +33,20 @@
   .card .status { margin-top:6px; font-size:.92rem; }
   .badge { display:inline-block; font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.03em;
     padding:2px 7px; border-radius:999px; margin-right:8px; vertical-align:1px; }
-  .verified { border-left-color:var(--ok); } .verified .badge { background:var(--okbg); color:var(--ok); }
-  .suspect { border-left-color:var(--warn); } .suspect .badge { background:var(--warnbg); color:var(--warn); }
+  .found { border-left-color:var(--ok); } .found .badge { background:var(--okbg); color:var(--ok); }
+  .mismatch { border-left-color:var(--warn); } .mismatch .badge { background:var(--warnbg); color:var(--warn); }
+  .grey { border-left-color:var(--grey); } .grey .badge { background:var(--greybg); color:var(--grey); }
   .not_found { border-left-color:var(--bad); } .not_found .badge { background:var(--badbg); color:var(--bad); }
   .error { border-left-color:var(--err); } .error .badge { background:var(--errbg); color:var(--err); }
   footer { margin-top:24px; color:var(--muted); font-size:.85rem; border-top:1px solid var(--line); padding-top:14px; }
+  a { color:var(--accent); }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>Citation Verifier</h1>
   <p class="tagline">Paste your reference list and check which references actually exist, before you cite them.</p>
-  <p class="privacy">Each reference's title and DOI are looked up in two public databases (CrossRef and OpenAlex). No private data, no AI, no account. The look-up happens from your browser.</p>
+  <p class="privacy">Each reference's title and DOI are looked up in two public databases (CrossRef and OpenAlex), from your browser. No private data, no AI, no account.</p>
 
   <div class="toolbar">
     <button class="primary" onclick="loadExample()">Try an example</button>
@@ -51,7 +54,7 @@
   </div>
 
   <textarea id="input" placeholder="Paste your references here, one per line."></textarea>
-  <p class="hint">One reference per line, in whatever style you have (APA works well). The checker shows the title it read from each line so you can see what it looked up.</p>
+  <p class="hint">One reference per line, in whatever style you have. The checker shows the title and DOI it read from each line, so you can see what it looked up.</p>
 
   <div class="toolbar">
     <button class="primary" id="go" onclick="runCheck()">Check references</button>
@@ -61,15 +64,22 @@
   <div id="out"></div>
 
   <footer>
-    "Verified" means two databases agree the work exists, "check this" means only one did, and "not found" means neither did, which usually points to a fabricated or mistyped reference (though a very obscure work can also miss). It confirms a reference is real; it does not confirm the reference says what you claim it says. Reading each pasted line is best-effort, so glance at the title it pulled out.
+    <strong>Found</strong> means a database confirmed it (one is enough). <strong>Double-check the DOI</strong> means the DOI resolves but to a differently-titled work. <strong>Likely grey literature</strong> means it has no DOI and is not in the scholarly databases, so it is probably a book, report, or website to verify yourself. <strong>Not found</strong> means the DOI did not resolve anywhere, which may signal a wrong or fabricated reference. Finding a work confirms it exists, not that it says what you claim.
   </footer>
 </div>
 
 <script>
-  // ---- parsing (pure) ----
+  // ---------- parsing (pure) ----------
   function extractDOI(line) {
-    const m = line.match(/10\.\d{4,9}\/[^\s,;]+/);
+    const m = line.match(/10\.\d{4,9}\/[^\s]+/);
     return m ? m[0].replace(/[).,;]+$/, "") : null;
+  }
+  function extractURL(line) {
+    const urls = line.match(/https?:\/\/\S+/g) || [];
+    for (const u of urls) {
+      if (!/doi\.org/.test(u)) return u.replace(/[).,;]+$/, "");
+    }
+    return null;
   }
   function extractYear(line) {
     const p = line.match(/\((\d{4})[a-z]?\)/);
@@ -80,9 +90,10 @@
   function extractTitle(line) {
     const ym = line.match(/\(\d{4}[a-z]?\)\.?\s*/);
     let rest = ym ? line.slice(ym.index + ym[0].length) : line;
-    rest = rest.replace(/\bhttps?:\/\/\S+/g, "").replace(/\bdoi:\s*\S+/gi, "");
-    let title = rest.split(/\.\s/)[0];
-    return title.replace(/\.\s*$/, "").trim();
+    rest = rest.replace(/https?:\/\/\S+/g, "").replace(/\bdoi:\s*\S+/gi, "").trim();
+    const m = rest.match(/^(.*?[.?!])\s/); // stop at the first sentence end (. ? or !)
+    let title = m ? m[1] : rest;
+    return title.replace(/\.$/, "").trim(); // drop a trailing period, keep ? and !
   }
   function parseRefs(text) {
     return text
@@ -90,11 +101,11 @@
       .map(function (l) { return l.trim(); })
       .filter(function (l) { return l.length > 0; })
       .map(function (l) {
-        return { raw: l, title: extractTitle(l), year: extractYear(l), doi: extractDOI(l) };
+        return { raw: l, title: extractTitle(l), year: extractYear(l), doi: extractDOI(l), url: extractURL(l) };
       });
   }
 
-  // ---- matching (pure) ----
+  // ---------- matching (pure) ----------
   function normalize(s) {
     return (s || "").toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
   }
@@ -106,7 +117,7 @@
     for (const w of A) if (B.has(w)) inter++;
     return (2 * inter) / (A.size + B.size);
   }
-  function matchesRef(ref, cand) {
+  function titleMatches(ref, cand) {
     if (!cand) return false;
     const sim = similarity(ref.title, cand.title);
     const yearOk = !ref.year || !cand.year || Math.abs(ref.year - cand.year) <= 1;
@@ -121,7 +132,9 @@
     return best;
   }
 
-  // ---- lookups (network) ----
+  // ---------- lookups (network) ----------
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
   function crItem(it) {
     const title = (it.title && it.title[0]) || "";
     let year = null;
@@ -132,93 +145,121 @@
     return { title: title, year: year };
   }
   async function crossref(ref) {
-    let url;
-    if (ref.doi) url = "https://api.crossref.org/works/" + encodeURIComponent(ref.doi);
-    else url = "https://api.crossref.org/works?rows=5&query.bibliographic=" + encodeURIComponent(ref.title || "");
-    const r = await fetch(url);
+    if (ref.doi) {
+      const r = await fetch("https://api.crossref.org/works/" + encodeURIComponent(ref.doi));
+      if (r.status === 404) return null; // definitively not in CrossRef
+      if (!r.ok) throw new Error("crossref " + r.status); // transient: retry or error
+      return crItem((await r.json()).message);
+    }
+    const r = await fetch("https://api.crossref.org/works?rows=5&query.bibliographic=" + encodeURIComponent(ref.title || ""));
     if (!r.ok) throw new Error("crossref " + r.status);
-    const j = await r.json();
-    if (ref.doi) return crItem(j.message);
-    const items = (j.message && j.message.items) || [];
+    const items = ((await r.json()).message || {}).items || [];
     return bestMatch(ref, items.map(crItem));
   }
-  function oaItem(w) {
-    return { title: w.title || w.display_name || "", year: w.publication_year || null };
-  }
+  function oaItem(w) { return { title: w.title || w.display_name || "", year: w.publication_year || null }; }
   async function openalex(ref) {
     let url;
     if (ref.doi) url = "https://api.openalex.org/works?per_page=1&filter=doi:" + encodeURIComponent(ref.doi);
     else url = "https://api.openalex.org/works?per_page=5&filter=title.search:" + encodeURIComponent(ref.title || "");
     const r = await fetch(url);
     if (!r.ok) throw new Error("openalex " + r.status);
-    const j = await r.json();
-    const res = (j.results || []).map(oaItem);
+    const res = ((await r.json()).results || []).map(oaItem);
     return ref.doi ? (res[0] || null) : bestMatch(ref, res);
   }
 
   async function lookup(name, fn, ref) {
-    try { return { name: name, cand: await fn(ref), error: false }; }
-    catch (e) { return { name: name, cand: null, error: true }; }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try { return { name: name, cand: await fn(ref), error: false }; }
+      catch (e) {
+        if (attempt === 0) { await sleep(500); continue; }
+        return { name: name, cand: null, error: true };
+      }
+    }
   }
+
   async function checkReference(ref) {
     const results = await Promise.all([
       lookup("CrossRef", crossref, ref),
       lookup("OpenAlex", openalex, ref),
     ]);
-    const errored = results.filter(function (x) { return x.error; }).length;
-    const hits = results.filter(function (x) { return !x.error && matchesRef(ref, x.cand); });
-    if (errored === results.length) return { ref: ref, status: "error" };
-    const n = hits.length;
-    const verdict = n >= 2 ? "verified" : n === 1 ? "suspect" : "not_found";
-    return {
-      ref: ref, status: "ok", verdict: verdict,
-      sources: hits.map(function (h) { return h.name; }),
-      matched: hits.length ? hits[0].cand : null,
-      partial: errored > 0,
-    };
+    const responded = results.filter(function (r) { return !r.error; });
+    const partial = results.length - responded.length > 0;
+    if (responded.length === 0) return { ref: ref, status: "error" };
+
+    const withCand = responded.filter(function (r) { return r.cand; });
+
+    if (ref.doi) {
+      // A returned record for this exact DOI is existence confirmation.
+      if (withCand.length > 0) {
+        const best = withCand[0].cand;
+        const sim = ref.title ? similarity(ref.title, best.title) : 1;
+        const verdict = sim < 0.5 ? "mismatch" : "found";
+        return { ref: ref, status: "ok", verdict: verdict, sources: withCand.map(function (c) { return c.name; }), matched: best, partial: partial };
+      }
+      return { ref: ref, status: "ok", verdict: "not_found", sources: [], partial: partial };
+    }
+
+    // No DOI: require a title match.
+    const hits = withCand.filter(function (c) { return titleMatches(ref, c.cand); });
+    if (hits.length > 0) {
+      return { ref: ref, status: "ok", verdict: "found", sources: hits.map(function (h) { return h.name; }), matched: hits[0].cand, partial: partial };
+    }
+    // No DOI and no scholarly match: likely grey literature.
+    return { ref: ref, status: "ok", verdict: "grey", sources: [], partial: partial };
   }
 
-  // ---- UI ----
+  // ---------- concurrency ----------
+  async function mapPool(items, limit, fn) {
+    const out = new Array(items.length);
+    let i = 0;
+    async function worker() {
+      while (i < items.length) { const idx = i++; out[idx] = await fn(items[idx], idx); }
+    }
+    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+    return out;
+  }
+
+  // ---------- UI ----------
   function esc(s) { return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 
   function cardHtml(res) {
     const ref = res.ref;
     const titleLine = '<div class="title">' + (esc(ref.title) || "<em>(could not read a title)</em>") + "</div>";
-    const metaBits = [];
-    if (ref.year) metaBits.push("year " + ref.year);
-    if (ref.doi) metaBits.push("DOI " + esc(ref.doi));
-    const meta = metaBits.length ? '<div class="meta">read from your line: ' + metaBits.join(", ") + "</div>" : "";
+    const bits = [];
+    if (ref.year) bits.push("year " + ref.year);
+    if (ref.doi) bits.push("DOI " + esc(ref.doi));
+    const meta = bits.length ? '<div class="meta">read from your line: ' + bits.join(", ") + "</div>" : "";
 
-    if (res.status === "error") {
-      return '<div class="card error"><span class="badge">no answer</span>' + titleLine + meta +
-        '<div class="status">Could not reach the databases. Check your internet connection and try again.</div></div>';
-    }
     let cls, badge, status;
-    if (res.verdict === "verified") {
-      cls = "verified"; badge = "verified";
-      status = "Found in " + res.sources.join(" and ") + ".";
+    if (res.status === "error") {
+      cls = "error"; badge = "no answer";
+      status = "Could not reach the databases. Check your connection and try again.";
+    } else if (res.verdict === "found") {
+      cls = "found"; badge = "found";
+      status = "Confirmed in " + res.sources.join(" and ") + ".";
       if (res.matched) status += " Matched: " + esc(res.matched.title) + (res.matched.year ? " (" + res.matched.year + ")" : "") + ".";
-    } else if (res.verdict === "suspect") {
-      cls = "suspect"; badge = "check this";
-      status = "Found in only " + res.sources.join("") + ". Worth confirming by hand.";
-      if (res.matched) status += " Closest match: " + esc(res.matched.title) + (res.matched.year ? " (" + res.matched.year + ")" : "") + ".";
+    } else if (res.verdict === "mismatch") {
+      cls = "mismatch"; badge = "double-check the DOI";
+      status = "The DOI resolves, but to a work titled “" + esc(res.matched ? res.matched.title : "") + "”. Make sure the DOI is the right one.";
+    } else if (res.verdict === "grey") {
+      cls = "grey"; badge = "likely grey literature";
+      status = "No DOI and not in the scholarly databases. This is likely a book, report, or website. Verify it ";
+      status += ref.url ? 'via <a href="' + esc(ref.url) + '" target="_blank" rel="noopener">its link</a>.' : "from its source.";
     } else {
       cls = "not_found"; badge = "not found";
-      status = "No match in CrossRef or OpenAlex. This often means a fabricated or mistyped reference; check it by hand.";
+      status = "The DOI did not resolve in CrossRef or OpenAlex. It may be wrong or fabricated; check it by hand.";
     }
-    if (res.partial) status += " (One database did not respond, so this is based on the other.)";
-    return '<div class="card ' + cls + '"><span class="badge">' + badge + "</span>" + titleLine + meta +
-      '<div class="status">' + status + "</div></div>";
+    if (res.partial) status += " (One database did not respond, so this rests on the other.)";
+    return '<div class="card ' + cls + '"><span class="badge">' + badge + "</span>" + titleLine + meta + '<div class="status">' + status + "</div></div>";
   }
 
   function render(results) {
-    const out = document.getElementById("out");
-    out.innerHTML = results.map(cardHtml).join("");
+    document.getElementById("out").innerHTML = results.map(cardHtml).join("");
+    const ok = results.filter(function (r) { return r.status === "ok" && r.verdict === "found"; }).length;
     const sum = document.getElementById("summary");
-    const flagged = results.filter(function (r) { return r.status !== "ok" || r.verdict !== "verified"; }).length;
-    sum.textContent = flagged === 0
-      ? "All " + results.length + " references verified."
-      : flagged + " of " + results.length + " need a look (not found, only one source, or no answer).";
+    sum.textContent = ok === results.length
+      ? "All " + results.length + " references confirmed."
+      : ok + " of " + results.length + " confirmed; the rest need a look (grey literature, a DOI to double-check, not found, or no answer).";
   }
 
   async function runCheck() {
@@ -226,12 +267,17 @@
     const sum = document.getElementById("summary");
     const out = document.getElementById("out");
     if (refs.length === 0) { sum.textContent = "Paste some references above, one per line."; out.innerHTML = ""; return; }
-    sum.textContent = "Checking " + refs.length + " reference" + (refs.length > 1 ? "s" : "") + "...";
     out.innerHTML = "";
     const btn = document.getElementById("go");
     btn.disabled = true;
+    let done = 0;
     try {
-      const results = await Promise.all(refs.map(checkReference));
+      const results = await mapPool(refs, 4, async function (ref) {
+        const r = await checkReference(ref);
+        done++;
+        sum.textContent = "Checking... " + done + " of " + refs.length;
+        return r;
+      });
       render(results);
     } catch (e) {
       sum.textContent = "Something went wrong reaching the databases. Check your connection and try again.";
@@ -243,7 +289,8 @@
   const EXAMPLE = [
     "Cronbach, L. J., & Meehl, P. E. (1955). Construct validity in psychological tests. Psychological Bulletin, 52(4), 281-302.",
     "Gebru, T., Morgenstern, J., Vecchione, B., et al. (2021). Datasheets for datasets. Communications of the ACM, 64(12), 86-92. https://doi.org/10.1145/3458723",
-    "Bennett, R., & Alvarez, M. (2022). Transformative learning and generative AI adoption among graduate researchers. Journal of Educational Technology, 39(2), 145-167.",
+    "World Economic Forum. (2025). The future of jobs report 2025. https://www.weforum.org/reports/",
+    "Bennett, R., & Alvarez, M. (2022). Transformative learning and generative AI adoption among graduate researchers. Journal of Educational Technology, 39(2), 145-167. https://doi.org/10.1016/j.fake.2022.000000",
   ].join("\n");
 
   function loadExample() {
