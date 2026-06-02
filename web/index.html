@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Citation Verifier</title>
+<style>
+  :root { --ink:#1c2430; --muted:#5b6671; --line:#dfe4ea; --accent:#2f5d8a; --bg:#f7f8fa;
+          --ok:#2c7a44; --okbg:#e9f5ee; --warn:#8a6d1e; --warnbg:#fbf3da; --bad:#a3322a; --badbg:#fcebe9; --err:#5b6671; --errbg:#eef0f2; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .wrap { max-width:840px; margin:0 auto; padding:28px 20px 64px; }
+  h1 { font-size:1.5rem; margin:0 0 4px; }
+  .tagline { color:var(--muted); margin:0 0 14px; }
+  .privacy { background:#eef4ef; border:1px solid #cfe0d3; color:#2c5338;
+    border-radius:8px; padding:10px 14px; font-size:.92rem; margin:0 0 18px; }
+  .toolbar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:0 0 12px; }
+  button { font:inherit; cursor:pointer; border:1px solid var(--line); background:#fff; color:var(--ink);
+    border-radius:8px; padding:9px 14px; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button:disabled { opacity:.5; cursor:default; }
+  button:not(:disabled):hover { filter:brightness(0.97); }
+  textarea { width:100%; font:inherit; padding:11px 13px; border:1px solid var(--line);
+    border-radius:8px; resize:vertical; min-height:130px; background:#fff; }
+  textarea:focus { outline:2px solid var(--accent); outline-offset:1px; border-color:var(--accent); }
+  .hint { color:var(--muted); font-size:.86rem; margin:6px 0 14px; }
+  .sum { margin:16px 0 12px; font-weight:600; }
+  .card { border:1px solid var(--line); border-left-width:5px; border-radius:8px; padding:11px 14px; margin:0 0 10px; background:#fff; }
+  .card .title { font-weight:600; }
+  .card .meta { color:var(--muted); font-size:.86rem; margin-top:2px; }
+  .card .status { margin-top:6px; font-size:.92rem; }
+  .badge { display:inline-block; font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.03em;
+    padding:2px 7px; border-radius:999px; margin-right:8px; vertical-align:1px; }
+  .verified { border-left-color:var(--ok); } .verified .badge { background:var(--okbg); color:var(--ok); }
+  .suspect { border-left-color:var(--warn); } .suspect .badge { background:var(--warnbg); color:var(--warn); }
+  .not_found { border-left-color:var(--bad); } .not_found .badge { background:var(--badbg); color:var(--bad); }
+  .error { border-left-color:var(--err); } .error .badge { background:var(--errbg); color:var(--err); }
+  footer { margin-top:24px; color:var(--muted); font-size:.85rem; border-top:1px solid var(--line); padding-top:14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Citation Verifier</h1>
+  <p class="tagline">Paste your reference list and check which references actually exist, before you cite them.</p>
+  <p class="privacy">Each reference's title and DOI are looked up in two public databases (CrossRef and OpenAlex). No private data, no AI, no account. The look-up happens from your browser.</p>
+
+  <div class="toolbar">
+    <button class="primary" onclick="loadExample()">Try an example</button>
+    <button onclick="clearAll()">Clear</button>
+  </div>
+
+  <textarea id="input" placeholder="Paste your references here, one per line."></textarea>
+  <p class="hint">One reference per line, in whatever style you have (APA works well). The checker shows the title it read from each line so you can see what it looked up.</p>
+
+  <div class="toolbar">
+    <button class="primary" id="go" onclick="runCheck()">Check references</button>
+  </div>
+
+  <div id="summary" class="sum"></div>
+  <div id="out"></div>
+
+  <footer>
+    "Verified" means two databases agree the work exists, "check this" means only one did, and "not found" means neither did, which usually points to a fabricated or mistyped reference (though a very obscure work can also miss). It confirms a reference is real; it does not confirm the reference says what you claim it says. Reading each pasted line is best-effort, so glance at the title it pulled out.
+  </footer>
+</div>
+
+<script>
+  // ---- parsing (pure) ----
+  function extractDOI(line) {
+    const m = line.match(/10\.\d{4,9}\/[^\s,;]+/);
+    return m ? m[0].replace(/[).,;]+$/, "") : null;
+  }
+  function extractYear(line) {
+    const p = line.match(/\((\d{4})[a-z]?\)/);
+    if (p) return Number(p[1]);
+    const any = line.match(/\b(19|20)\d{2}\b/);
+    return any ? Number(any[0]) : null;
+  }
+  function extractTitle(line) {
+    const ym = line.match(/\(\d{4}[a-z]?\)\.?\s*/);
+    let rest = ym ? line.slice(ym.index + ym[0].length) : line;
+    rest = rest.replace(/\bhttps?:\/\/\S+/g, "").replace(/\bdoi:\s*\S+/gi, "");
+    let title = rest.split(/\.\s/)[0];
+    return title.replace(/\.\s*$/, "").trim();
+  }
+  function parseRefs(text) {
+    return text
+      .split(/\r?\n/)
+      .map(function (l) { return l.trim(); })
+      .filter(function (l) { return l.length > 0; })
+      .map(function (l) {
+        return { raw: l, title: extractTitle(l), year: extractYear(l), doi: extractDOI(l) };
+      });
+  }
+
+  // ---- matching (pure) ----
+  function normalize(s) {
+    return (s || "").toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+  }
+  function words(s) { return normalize(s).split(" ").filter(Boolean); }
+  function similarity(a, b) {
+    const A = new Set(words(a)), B = new Set(words(b));
+    if (A.size === 0 || B.size === 0) return 0;
+    let inter = 0;
+    for (const w of A) if (B.has(w)) inter++;
+    return (2 * inter) / (A.size + B.size);
+  }
+  function matchesRef(ref, cand) {
+    if (!cand) return false;
+    const sim = similarity(ref.title, cand.title);
+    const yearOk = !ref.year || !cand.year || Math.abs(ref.year - cand.year) <= 1;
+    return sim >= 0.8 && yearOk;
+  }
+  function bestMatch(ref, cands) {
+    let best = null, bestSim = -1;
+    for (const c of cands) {
+      const s = similarity(ref.title, c.title);
+      if (s > bestSim) { bestSim = s; best = c; }
+    }
+    return best;
+  }
+
+  // ---- lookups (network) ----
+  function crItem(it) {
+    const title = (it.title && it.title[0]) || "";
+    let year = null;
+    for (const k of ["published-print", "published-online", "issued", "created"]) {
+      const dp = it[k] && it[k]["date-parts"];
+      if (dp && dp[0] && dp[0][0]) { year = dp[0][0]; break; }
+    }
+    return { title: title, year: year };
+  }
+  async function crossref(ref) {
+    let url;
+    if (ref.doi) url = "https://api.crossref.org/works/" + encodeURIComponent(ref.doi);
+    else url = "https://api.crossref.org/works?rows=5&query.bibliographic=" + encodeURIComponent(ref.title || "");
+    const r = await fetch(url);
+    if (!r.ok) throw new Error("crossref " + r.status);
+    const j = await r.json();
+    if (ref.doi) return crItem(j.message);
+    const items = (j.message && j.message.items) || [];
+    return bestMatch(ref, items.map(crItem));
+  }
+  function oaItem(w) {
+    return { title: w.title || w.display_name || "", year: w.publication_year || null };
+  }
+  async function openalex(ref) {
+    let url;
+    if (ref.doi) url = "https://api.openalex.org/works?per_page=1&filter=doi:" + encodeURIComponent(ref.doi);
+    else url = "https://api.openalex.org/works?per_page=5&filter=title.search:" + encodeURIComponent(ref.title || "");
+    const r = await fetch(url);
+    if (!r.ok) throw new Error("openalex " + r.status);
+    const j = await r.json();
+    const res = (j.results || []).map(oaItem);
+    return ref.doi ? (res[0] || null) : bestMatch(ref, res);
+  }
+
+  async function lookup(name, fn, ref) {
+    try { return { name: name, cand: await fn(ref), error: false }; }
+    catch (e) { return { name: name, cand: null, error: true }; }
+  }
+  async function checkReference(ref) {
+    const results = await Promise.all([
+      lookup("CrossRef", crossref, ref),
+      lookup("OpenAlex", openalex, ref),
+    ]);
+    const errored = results.filter(function (x) { return x.error; }).length;
+    const hits = results.filter(function (x) { return !x.error && matchesRef(ref, x.cand); });
+    if (errored === results.length) return { ref: ref, status: "error" };
+    const n = hits.length;
+    const verdict = n >= 2 ? "verified" : n === 1 ? "suspect" : "not_found";
+    return {
+      ref: ref, status: "ok", verdict: verdict,
+      sources: hits.map(function (h) { return h.name; }),
+      matched: hits.length ? hits[0].cand : null,
+      partial: errored > 0,
+    };
+  }
+
+  // ---- UI ----
+  function esc(s) { return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+  function cardHtml(res) {
+    const ref = res.ref;
+    const titleLine = '<div class="title">' + (esc(ref.title) || "<em>(could not read a title)</em>") + "</div>";
+    const metaBits = [];
+    if (ref.year) metaBits.push("year " + ref.year);
+    if (ref.doi) metaBits.push("DOI " + esc(ref.doi));
+    const meta = metaBits.length ? '<div class="meta">read from your line: ' + metaBits.join(", ") + "</div>" : "";
+
+    if (res.status === "error") {
+      return '<div class="card error"><span class="badge">no answer</span>' + titleLine + meta +
+        '<div class="status">Could not reach the databases. Check your internet connection and try again.</div></div>';
+    }
+    let cls, badge, status;
+    if (res.verdict === "verified") {
+      cls = "verified"; badge = "verified";
+      status = "Found in " + res.sources.join(" and ") + ".";
+      if (res.matched) status += " Matched: " + esc(res.matched.title) + (res.matched.year ? " (" + res.matched.year + ")" : "") + ".";
+    } else if (res.verdict === "suspect") {
+      cls = "suspect"; badge = "check this";
+      status = "Found in only " + res.sources.join("") + ". Worth confirming by hand.";
+      if (res.matched) status += " Closest match: " + esc(res.matched.title) + (res.matched.year ? " (" + res.matched.year + ")" : "") + ".";
+    } else {
+      cls = "not_found"; badge = "not found";
+      status = "No match in CrossRef or OpenAlex. This often means a fabricated or mistyped reference; check it by hand.";
+    }
+    if (res.partial) status += " (One database did not respond, so this is based on the other.)";
+    return '<div class="card ' + cls + '"><span class="badge">' + badge + "</span>" + titleLine + meta +
+      '<div class="status">' + status + "</div></div>";
+  }
+
+  function render(results) {
+    const out = document.getElementById("out");
+    out.innerHTML = results.map(cardHtml).join("");
+    const sum = document.getElementById("summary");
+    const flagged = results.filter(function (r) { return r.status !== "ok" || r.verdict !== "verified"; }).length;
+    sum.textContent = flagged === 0
+      ? "All " + results.length + " references verified."
+      : flagged + " of " + results.length + " need a look (not found, only one source, or no answer).";
+  }
+
+  async function runCheck() {
+    const refs = parseRefs(document.getElementById("input").value);
+    const sum = document.getElementById("summary");
+    const out = document.getElementById("out");
+    if (refs.length === 0) { sum.textContent = "Paste some references above, one per line."; out.innerHTML = ""; return; }
+    sum.textContent = "Checking " + refs.length + " reference" + (refs.length > 1 ? "s" : "") + "...";
+    out.innerHTML = "";
+    const btn = document.getElementById("go");
+    btn.disabled = true;
+    try {
+      const results = await Promise.all(refs.map(checkReference));
+      render(results);
+    } catch (e) {
+      sum.textContent = "Something went wrong reaching the databases. Check your connection and try again.";
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  const EXAMPLE = [
+    "Cronbach, L. J., & Meehl, P. E. (1955). Construct validity in psychological tests. Psychological Bulletin, 52(4), 281-302.",
+    "Gebru, T., Morgenstern, J., Vecchione, B., et al. (2021). Datasheets for datasets. Communications of the ACM, 64(12), 86-92. https://doi.org/10.1145/3458723",
+    "Bennett, R., & Alvarez, M. (2022). Transformative learning and generative AI adoption among graduate researchers. Journal of Educational Technology, 39(2), 145-167.",
+  ].join("\n");
+
+  function loadExample() {
+    document.getElementById("input").value = EXAMPLE;
+    runCheck();
+  }
+  function clearAll() {
+    document.getElementById("input").value = "";
+    document.getElementById("summary").textContent = "";
+    document.getElementById("out").innerHTML = "";
+  }
+</script>
+</body>
+</html>
