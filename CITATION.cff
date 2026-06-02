@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: citation-verifier
+abstract: >-
+  A deterministic, multi-database checker that confirms whether references exist
+  and whether their title, year, and authors match, by cross-checking CrossRef,
+  OpenAlex, and Semantic Scholar. It flags suspect and not-found references for
+  human review. It establishes existence and metadata agreement, not whether a
+  source supports the claim it is cited for.
+type: software
+authors:
+  - family-names: Crocco
+    given-names: Oliver S.
+    orcid: "https://orcid.org/0000-0001-8472-1224"
+license: MIT
+repository-code: "https://github.com/WarderHouse/citation-verifier"
+url: "https://github.com/WarderHouse/citation-verifier"
+# doi: added after the first GitHub release is archived on Zenodo
+version: "0.1.0"
+date-released: "2026-06-02"
+keywords:
+  - citations
+  - references
+  - research integrity
+  - reproducibility
+  - hallucination
+  - open science
+  - research software

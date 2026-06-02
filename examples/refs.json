@@ -1,0 +1,20 @@
+[
+  {
+    "title": "Construct validity in psychological tests",
+    "authors": ["Cronbach", "Meehl"],
+    "year": 1955,
+    "doi": "10.1037/h0040957"
+  },
+  {
+    "title": "A mathematical theory of communication",
+    "authors": ["Shannon"],
+    "year": 1948,
+    "doi": "10.1002/j.1538-7305.1948.tb01338.x"
+  },
+  {
+    "title": "An entirely fabricated paper that does not exist anywhere",
+    "authors": ["Nemo"],
+    "year": 2023,
+    "doi": "10.0000/not.a.real.doi.0000"
+  }
+]
