@@ -1,10 +1,16 @@
 name: Dependabot auto-merge
 
-# Let routine dependency bumps clear themselves. For a Dependabot PR whose
-# highest change is patch or minor, approve it and enable auto-merge so GitHub
-# merges it once the required CI checks pass. MAJOR bumps are intentionally left
-# alone — they can break, so they wait for a human review. Auto-merge respects
-# branch protection and never merges a red PR, so CI is still the gate.
+# Let routine dependency bumps clear themselves. For a Dependabot PR whose highest
+# change is patch or minor, enable auto-merge so GitHub merges it once the required
+# CI checks pass. MAJOR bumps are intentionally left alone: they can break, so they
+# wait for a human review.
+#
+# This workflow does not self-approve. GitHub's GITHUB_TOKEN is not permitted to
+# approve pull requests, so the old "gh pr review --approve" step always failed and
+# stalled every Dependabot PR. Auto-merge only takes effect once the repository has
+# branch protection with required status checks to gate on; without that, enabling
+# auto-merge is a no-op and the PR waits for a manual merge. Either way CI stays the
+# gate and a red PR never merges.
 
 on: pull_request
 
@@ -20,13 +26,13 @@ jobs:
       - name: Fetch Dependabot metadata
         id: meta
         uses: dependabot/fetch-metadata@21025c705c08248db411dc16f3619e6b5f9ea21a # v2
-      - name: Approve and enable auto-merge (patch/minor only)
+      - name: Enable auto-merge (patch/minor only)
         if: >-
           steps.meta.outputs.update-type == 'version-update:semver-patch' ||
           steps.meta.outputs.update-type == 'version-update:semver-minor'
         run: |
-          gh pr review --approve "$PR_URL"
-          gh pr merge --auto --squash "$PR_URL"
+          gh pr merge --auto --squash "$PR_URL" \
+            || echo "auto-merge not enabled (needs branch protection with required checks); leaving for manual merge"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
