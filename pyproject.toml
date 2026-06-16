@@ -61,4 +61,4 @@ ignore = ["E501"]
 known-first-party = ["citeverify"]
 
 [dependency-groups]
-dev = ["pytest>=8", "ruff>=0.15.16"]
+dev = ["pytest>=9.1.0", "ruff>=0.15.17"]
