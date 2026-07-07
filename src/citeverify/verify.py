@@ -8,8 +8,12 @@ Verdicts:
   cited. Often a wrong or transposed DOI; double-check it.
 - ``grey_literature``: no DOI and no scholarly match. Likely a book, report, or
   website that these databases do not index. Verify it yourself.
-- ``not_found``: a DOI was given but no database has it. May be wrong or
-  fabricated.
+- ``not_found``: a DOI was given, at least one database was reached, and none had
+  it. May be wrong or fabricated.
+- ``unverified``: no database could be reached at all (offline, or every service
+  errored or rate-limited past its retries). This is not evidence for or against
+  the citation; it means we could not check. Confidence is ``None``. Kept strictly
+  apart from ``not_found`` so a failed run never brands a real citation fabricated.
 
 One confirming database is enough for ``found``, because CrossRef and OpenAlex
 overlap heavily and requiring both produced constant false alarms.
@@ -19,7 +23,7 @@ from __future__ import annotations
 
 import time
 
-from citeverify.lookup import DEFAULT_LOOKUPS
+from citeverify.lookup import DEFAULT_LOOKUPS, LookupUnavailable
 from citeverify.scoring import (
     AUTHOR_MATCH_THRESHOLD,
     DOI_TITLE_MISMATCH,
@@ -34,6 +38,7 @@ _LABELS = {
     "mismatch": "check DOI",
     "grey_literature": "grey lit",
     "not_found": "NOT FOUND",
+    "unverified": "unverified",
 }
 
 
@@ -45,9 +50,16 @@ def verify_reference(ref: dict, *, lookups=None, pause: float = 0.2) -> dict:
     """
     lookups = DEFAULT_LOOKUPS if lookups is None else lookups
 
+    # ``records`` holds only databases that actually answered (a record or None,
+    # meaning "found nothing"). Databases that could not be reached go in
+    # ``unreachable`` instead, so a lookup failure is never read as an absence.
     records: dict[str, dict | None] = {}
+    unreachable: list[str] = []
     for name, fn in lookups.items():
-        records[name] = fn(ref)
+        try:
+            records[name] = fn(ref)
+        except LookupUnavailable:
+            unreachable.append(name)
         if pause:
             time.sleep(pause)  # polite to keyless public APIs
 
@@ -58,7 +70,10 @@ def verify_reference(ref: dict, *, lookups=None, pause: float = 0.2) -> dict:
     }
     matched = None
 
-    if ref.get("doi"):
+    if not records:
+        # Every database errored: we could not check, so we make no claim.
+        verdict, sources_found = "unverified", []
+    elif ref.get("doi"):
         # A returned record for this exact DOI is existence confirmation.
         doi_sources = [n for n, c in records.items() if c]
         if doi_sources:
@@ -71,6 +86,7 @@ def verify_reference(ref: dict, *, lookups=None, pause: float = 0.2) -> dict:
             )
             sources_found = doi_sources
         else:
+            # At least one database was reached and none had the DOI.
             verdict, sources_found = "not_found", []
     else:
         # No DOI: a database counts only on a title match (year or author backed).
@@ -92,6 +108,9 @@ def verify_reference(ref: dict, *, lookups=None, pause: float = 0.2) -> dict:
         confidence = round(min(1.0, 0.5 + 0.25 * len(sources_found)), 2)
     elif verdict == "mismatch":
         confidence = 0.4
+    elif verdict == "unverified":
+        # No confidence value: we did not manage to check the citation at all.
+        confidence = None
     else:
         confidence = 0.0
 
@@ -104,6 +123,7 @@ def verify_reference(ref: dict, *, lookups=None, pause: float = 0.2) -> dict:
         "matched_title": matched.get("title") if matched else None,
         "title_sims": sims,
         "confidence": confidence,
+        "unreachable": unreachable,
     }
 
 
@@ -130,6 +150,6 @@ def format_report(results) -> str:
     lines += [
         "",
         f"**{len(flagged)} of {len(results)} need review "
-        "(check the DOI, grey literature, or not found).**",
+        "(check the DOI, grey literature, not found, or unverified).**",
     ]
     return "\n".join(lines) + "\n"
