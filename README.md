@@ -12,8 +12,11 @@ A reference is **found** when any database confirms it (a resolved DOI is enough
 flagged **check the DOI** when the DOI resolves to a differently-titled work,
 **likely grey literature** when it has no DOI and is not in the databases (a book,
 report, or website to verify yourself), and **not found** when a DOI resolves
-nowhere. It is built for anyone who uses AI assistance to draft or gather
-citations and wants a deterministic check that the references are real.
+nowhere (with at least one database reached). If no database can be reached at
+all (offline, or every service rate-limited), the reference is **unverified**:
+we could not check, which is never treated as evidence of fabrication. It is
+built for anyone who uses AI assistance to draft or gather citations and wants a
+deterministic check that the references are real.
 
 It establishes that a work **exists** and that its metadata **matches**. It does
 *not* judge whether the work supports the claim it is cited for, or whether the
@@ -28,8 +31,8 @@ For each reference, `citeverify`:
   supply one, otherwise by title);
 - treats a resolved DOI as confirmation on its own; without a DOI, counts a
   database when the returned title matches and the year or authors line up;
-- returns a verdict (`found` / `check the DOI` / `grey literature` / `not found`)
-  with the databases that confirmed it.
+- returns a verdict (`found` / `check the DOI` / `grey literature` / `not found` /
+  `unverified`) with the databases that confirmed it.
 
 ## Confidentiality
 
@@ -69,7 +72,7 @@ uv run citeverify --self-test
 | 3 | The future of jobs report 2025 (2025) | grey lit | - |
 | 4 | An entirely fabricated paper that does not exist ... (2023) | NOT FOUND | - |
 
-**2 of 4 need review (check the DOI, grey literature, or not found).**
+**2 of 4 need review (check the DOI, grey literature, not found, or unverified).**
 ```
 
 Check your own references by putting them in a JSON file (see
@@ -97,7 +100,11 @@ Set `CITEVERIFY_MAILTO` to your email to join CrossRef's faster "polite pool".
   one you cited. Often a transposed or wrong DOI.
 - **grey literature**: no DOI and no scholarly match. Likely a book, report, or
   website these databases do not index; verify it yourself.
-- **not found**: a DOI was given but no database has it. May be wrong or fabricated.
+- **not found**: a DOI was given, at least one database was reached, and none had
+  it. May be wrong or fabricated.
+- **unverified**: no database could be reached at all (offline, or every service
+  errored or rate-limited past its retries). We could not check, so this is never
+  read as evidence for or against the citation; confidence is not available.
 
 ## Scope: what this does and does not establish
 
